@@ -7,9 +7,12 @@ import {
   AlertOctagon, 
   CheckCircle2, 
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Play,
+  ArrowRight
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 const PIPELINE_STAGES = [
   'Wallet Intake',
@@ -23,28 +26,34 @@ const PIPELINE_STAGES = [
 
 export function DashboardPage() {
   const { token } = useAuth();
+  const navigate = useNavigate();
+
   const [stats, setStats] = useState({
     wallets_tracked: 0,
     transactions_mapped: 0,
     probable_vasps: 0,
     high_risk_clusters: 0,
   });
+  const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const fetchStats = async () => {
+  const fetchDashboardData = async () => {
     setLoading(true);
     setErrorMsg('');
     try {
-      const res = await fetch('/api/stats', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
+      const [resStats, resCases] = await Promise.all([
+        fetch('/api/stats', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/cases', { headers: { Authorization: `Bearer ${token}` } })
+      ]);
+
+      if (resStats.ok) {
+        const data = await resStats.json();
         setStats(data);
-      } else {
-        const err = await res.json().catch(() => ({ message: 'Failed to fetch backend statistics' }));
-        setErrorMsg(err.message || 'Backend connection error');
+      }
+      if (resCases.ok) {
+        const casesData = await resCases.json();
+        setCases(casesData || []);
       }
     } catch (e) {
       setErrorMsg('Cannot reach backend server. Please verify Uvicorn server status on port 8000.');
@@ -54,7 +63,7 @@ export function DashboardPage() {
   };
 
   useEffect(() => {
-    fetchStats();
+    fetchDashboardData();
   }, [token]);
 
   return (
@@ -77,7 +86,7 @@ export function DashboardPage() {
                 <p style={{ fontSize: '13px', marginTop: '2px' }}>{errorMsg}</p>
               </div>
             </div>
-            <button className="btn btn-secondary" onClick={fetchStats} style={{ height: '34px', fontSize: '13px' }}>
+            <button className="btn btn-secondary" onClick={fetchDashboardData} style={{ height: '34px', fontSize: '13px' }}>
               <RefreshCw size={14} /> Retry
             </button>
           </div>
@@ -142,9 +151,9 @@ export function DashboardPage() {
                 flexDirection: 'column',
                 gap: '6px'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyBetween: 'space-between', width: '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                   <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted-color)' }}>Stage {idx + 1}</span>
-                  <CheckCircle2 size={14} style={{ color: 'var(--muted-color)' }} />
+                  <CheckCircle2 size={14} style={{ color: 'var(--accent-color)' }} />
                 </div>
                 <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-color)' }}>{stage}</div>
               </div>
@@ -152,52 +161,15 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {/* Two Cards Side by Side */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px' }}>
-          {/* Fund-Flow Cluster Preview */}
-          <div className="card">
-            <h2 className="card-title" style={{ marginBottom: '16px' }}>Fund-Flow Cluster Preview</h2>
-            <div style={{
-              height: '200px',
-              backgroundColor: 'var(--surface-2-color)',
-              border: '1px dashed var(--border-color)',
-              borderRadius: '8px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--muted-color)',
-              gap: '8px'
-            }}>
-              <GitCommit size={32} />
-              <span style={{ fontSize: '13px' }}>No active case graph loaded yet.</span>
-            </div>
-          </div>
-
-          {/* Top Risk Alerts */}
-          <div className="card">
-            <h2 className="card-title" style={{ marginBottom: '16px' }}>Top Risk Alerts</h2>
-            <div style={{
-              height: '200px',
-              backgroundColor: 'var(--surface-2-color)',
-              border: '1px dashed var(--border-color)',
-              borderRadius: '8px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--muted-color)',
-              gap: '8px'
-            }}>
-              <AlertOctagon size={32} />
-              <span style={{ fontSize: '13px' }}>No high-risk alerts recorded.</span>
-            </div>
-          </div>
-        </div>
-
         {/* Recent Cases Table */}
         <div className="card">
-          <h2 className="card-title" style={{ marginBottom: '16px' }}>Recent Cases</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h2 className="card-title">Recent Investigation Cases</h2>
+            <button className="btn btn-primary" style={{ height: 32, fontSize: 13 }} onClick={() => navigate('/trace')}>
+              <Play size={14} /> Start Tracing
+            </button>
+          </div>
+
           <div className="table-container">
             <table className="data-table">
               <thead>
@@ -206,16 +178,39 @@ export function DashboardPage() {
                   <th>Title</th>
                   <th>Suspect Wallet</th>
                   <th>Chain</th>
+                  <th>Loss USD</th>
                   <th>Status</th>
-                  <th>Created</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted-color)', padding: '24px' }}>
-                    No investigation cases recorded. Use <strong>Report Wallet</strong> to begin tracing.
-                  </td>
-                </tr>
+                {cases.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted-color)', padding: '24px' }}>
+                      No investigation cases recorded. Click <strong>Start Tracing</strong> to begin.
+                    </td>
+                  </tr>
+                ) : (
+                  cases.map((c) => (
+                    <tr key={c.case_ref}>
+                      <td style={{ fontWeight: 600 }} className="mono-address">{c.case_ref}</td>
+                      <td>{c.title}</td>
+                      <td className="mono-address">{c.suspect_wallet.substring(0, 8)}...{c.suspect_wallet.substring(c.suspect_wallet.length - 6)}</td>
+                      <td style={{ textTransform: 'uppercase', fontWeight: 600 }}>{c.blockchain}</td>
+                      <td>${c.amount_lost?.toLocaleString() || '0'}</td>
+                      <td>
+                        <span className={`badge ${c.status === 'COMPLETED' ? 'badge-low' : 'badge-high'}`}>
+                          {c.status}
+                        </span>
+                      </td>
+                      <td>
+                        <button className="btn btn-secondary" style={{ height: 28, fontSize: 12, padding: '0 8px' }} onClick={() => navigate('/trace')}>
+                          Inspect Graph <ArrowRight size={12} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
