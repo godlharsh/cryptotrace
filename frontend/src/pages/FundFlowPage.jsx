@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Play, RefreshCw, Shield, AlertTriangle, Building2, ExternalLink, Copy, Check, Filter } from 'lucide-react';
 import { AppShell } from '../components/AppShell';
 import GraphCanvas from '../components/GraphCanvas';
+import { formatINR } from '../utils/formatters';
 
 export function FundFlowPage() {
   const [suspectWallet, setSuspectWallet] = useState('');
@@ -20,6 +21,34 @@ export function FundFlowPage() {
   const [traceProgress, setTraceProgress] = useState({ stage: '', percent: 0, status: '' });
   const [errorMessage, setErrorMessage] = useState('');
   const [copiedAddr, setCopiedAddr] = useState(false);
+
+  // Duplicate Case Prompt Modal State
+  const [duplicateModal, setDuplicateModal] = useState(null);
+
+  // Real-time client-side chain detection & validation
+  const chainValidation = useMemo(() => {
+    if (!suspectWallet.trim()) return { isMismatch: false, detected: '', msg: '' };
+    const addr = suspectWallet.trim();
+
+    let detected = '';
+    if (/^T[a-zA-Z0-9]{33}$/.test(addr)) {
+      detected = 'tron';
+    } else if (/^0x[a-fA-F0-9]{40}$/.test(addr)) {
+      detected = 'ethereum';
+    } else if (/^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{25,60})$/i.test(addr)) {
+      detected = 'bitcoin';
+    }
+
+    if (detected && detected !== blockchain.toLowerCase()) {
+      return {
+        isMismatch: true,
+        detected,
+        msg: `This looks like a ${detected.toUpperCase()} address.`
+      };
+    }
+
+    return { isMismatch: false, detected, msg: '' };
+  }, [suspectWallet, blockchain]);
 
   useEffect(() => {
     fetchCases();
@@ -62,10 +91,15 @@ export function FundFlowPage() {
     if (ref) loadCaseGraph(ref);
   };
 
-  const handleStartTrace = async (e) => {
-    e.preventDefault();
+  const handleStartTrace = async (e, forceNew = false) => {
+    if (e) e.preventDefault();
     if (!suspectWallet.trim()) {
       setErrorMessage('Please enter a valid victim-reported suspect wallet address.');
+      return;
+    }
+
+    if (chainValidation.isMismatch) {
+      setErrorMessage(chainValidation.msg);
       return;
     }
 
@@ -84,12 +118,24 @@ export function FundFlowPage() {
           title: caseTitle.trim() || `Suspect ${suspectWallet.substring(0, 8)} Investigation`,
           amount_lost: parseFloat(amountLost) || 0.0,
           suspect_wallet: suspectWallet.trim(),
-          blockchain: blockchain,
-          depth: parseInt(depth, 10) || 3
+          blockchain: chainValidation.detected || blockchain,
+          depth: parseInt(depth, 10) || 3,
+          force_new: forceNew
         })
       });
 
       const resData = await r.json();
+
+      // Check for 409 Duplicate Case response
+      if (r.status === 409 && resData.duplicate) {
+        setIsTracing(false);
+        setDuplicateModal({
+          existing_case_ref: resData.existing_case_ref,
+          message: resData.message || 'A case for this wallet exists. Open it or create a new trace?'
+        });
+        return;
+      }
+
       if (!r.ok) {
         throw new Error(resData.message || 'Failed to launch tracing task.');
       }
@@ -178,7 +224,7 @@ export function FundFlowPage() {
             </div>
           )}
 
-          <form onSubmit={handleStartTrace} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, alignItems: 'end' }}>
+          <form onSubmit={(e) => handleStartTrace(e, false)} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, alignItems: 'end' }}>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-color)', display: 'block', marginBottom: 6 }}>
                 Suspect Wallet Address *
@@ -190,7 +236,13 @@ export function FundFlowPage() {
                 value={suspectWallet}
                 onChange={(e) => setSuspectWallet(e.target.value)}
                 required
+                style={{ borderColor: chainValidation.isMismatch ? '#DC2626' : undefined }}
               />
+              {chainValidation.isMismatch && (
+                <span style={{ color: '#DC2626', fontSize: 12, fontWeight: 600, display: 'block', marginTop: 4 }}>
+                  ⚠️ {chainValidation.msg}
+                </span>
+              )}
             </div>
 
             <div>
@@ -228,16 +280,58 @@ export function FundFlowPage() {
                 value={amountLost}
                 onChange={(e) => setAmountLost(e.target.value)}
               />
+              <span style={{ fontSize: 11, color: 'var(--muted-color)', display: 'block', marginTop: 4 }}>
+                Converted: {formatINR(amountLost)}
+              </span>
             </div>
 
             <div>
-              <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={isTracing}>
+              <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={isTracing || chainValidation.isMismatch}>
                 {isTracing ? <span className="spinner"></span> : <Play size={16} />}
                 {isTracing ? 'Tracing Chain...' : 'Start Trace'}
               </button>
             </div>
           </form>
         </div>
+
+        {/* Duplicate Case Modal Prompt */}
+        {duplicateModal && (
+          <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110 }}>
+            <div className="card" style={{ width: 440, padding: 28, textAlign: 'center' }}>
+              <AlertTriangle size={36} color="#EA580C" style={{ marginBottom: 12 }} />
+              <h3 className="card-title" style={{ fontSize: 18, marginBottom: 8 }}>Case Already Exists</h3>
+              <p style={{ color: 'var(--text-color)', fontSize: 14, marginBottom: 24, lineHeight: 1.5 }}>
+                {duplicateModal.message}
+              </p>
+
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button
+                  className="btn btn-primary"
+                  style={{ flex: 1 }}
+                  onClick={() => {
+                    const ref = duplicateModal.existing_case_ref;
+                    setDuplicateModal(null);
+                    setSelectedCaseRef(ref);
+                    loadCaseGraph(ref);
+                  }}
+                >
+                  Open Existing Case
+                </button>
+
+                <button
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                  onClick={() => {
+                    setDuplicateModal(null);
+                    handleStartTrace(null, true);
+                  }}
+                >
+                  Create New Trace
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Tracing Progress Modal */}
         {isTracing && (

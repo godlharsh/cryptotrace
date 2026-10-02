@@ -52,22 +52,38 @@ def on_startup():
     except Exception as e:
         print(f"Metadata create_all initial attempt: {e}")
         
-    db = next(get_db())
+    from app.database import SessionLocal
+    db = SessionLocal()
     try:
         auth.seed_admin_user(db)
+        
+        # Clean up specified test cases
+        target_cases = db.query(models.Case).filter(models.Case.case_ref.in_(["CT-593293", "CT-566760"])).all()
+        target_ids = [c.id for c in target_cases]
+        if target_ids:
+            db.query(models.Alert).filter(models.Alert.case_id.in_(target_ids)).delete(synchronize_session=False)
+        db.query(models.GraphSnapshot).filter(models.GraphSnapshot.case_ref.in_(["CT-593293", "CT-566760"])).delete(synchronize_session=False)
+        db.query(models.Case).filter(models.Case.case_ref.in_(["CT-593293", "CT-566760"])).delete(synchronize_session=False)
+
+        # Fix existing mislabeled rows in database by re-detecting chain from address
+        cases_list = db.query(models.Case).all()
+        for c in cases_list:
+            is_valid, detected, _ = detect_and_validate_address(c.suspect_wallet)
+            if is_valid and c.blockchain != detected:
+                print(f"[+] Correcting DB case {c.case_ref} chain: {c.blockchain} -> {detected}")
+                c.blockchain = detected
+
+        wallets_list = db.query(models.Wallet).all()
+        for w in wallets_list:
+            is_valid, detected, _ = detect_and_validate_address(w.address)
+            if is_valid and w.chain != detected:
+                print(f"[+] Correcting DB wallet {w.address} chain: {w.chain} -> {detected}")
+                w.chain = detected
+
+        db.commit()
     except Exception as e:
         db.rollback()
-        print(f"Legacy schema mismatch detected: {e}. Recreating v2 tables...")
-        try:
-            with engine.begin() as conn:
-                conn.execute(text("DROP TABLE IF EXISTS users CASCADE;"))
-                conn.execute(text("DROP TABLE IF EXISTS cases CASCADE;"))
-                conn.execute(text("DROP TABLE IF EXISTS wallets CASCADE;"))
-                conn.execute(text("DROP TABLE IF EXISTS alerts CASCADE;"))
-        except Exception as drop_err:
-            print(f"Drop table error: {drop_err}")
-        Base.metadata.create_all(bind=engine)
-        auth.seed_admin_user(db)
+        print(f"Startup DB correction notice: {e}")
     finally:
         db.close()
 
@@ -113,14 +129,19 @@ async def get_me(current_user: models.User = Depends(auth.get_current_user)):
 
 @app.get("/stats", response_model=schemas.StatsResponse)
 async def get_stats(db: Session = Depends(get_db)):
+    from app.services.blockchain_clients import CoinGeckoClient
     wallets_count = db.query(models.Wallet).count()
     cases_count = db.query(models.Case).count()
     alerts_count = db.query(models.Alert).filter(models.Alert.severity.in_(["HIGH", "CRITICAL"])).count()
+    rates = CoinGeckoClient.get_prices()
+    inr_rate = rates.get("USD_INR", 86.5)
+
     return schemas.StatsResponse(
         wallets_tracked=wallets_count,
         transactions_mapped=cases_count * 15,
         probable_vasps=db.query(models.Wallet).filter(models.Wallet.vasp_name.isnot(None)).count(),
-        high_risk_clusters=alerts_count
+        high_risk_clusters=alerts_count,
+        usd_inr_rate=inr_rate
     )
 
 # --- BACKGROUND PIPELINE (PHASE 2 + PHASE 3) ---
@@ -241,11 +262,38 @@ async def initiate_trace(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    is_valid, detected_chain, err_msg = detect_and_validate_address(request.suspect_wallet)
+    suspect_addr = request.suspect_wallet.strip()
+    is_valid, detected_chain, err_msg = detect_and_validate_address(suspect_addr)
     if not is_valid:
         raise HTTPException(status_code=400, detail=err_msg)
 
-    chain = request.blockchain.lower() if request.blockchain else detected_chain
+    # Validate selected blockchain against detected chain format
+    if request.blockchain and request.blockchain.lower() != detected_chain:
+        raise HTTPException(
+            status_code=400,
+            detail=f"This looks like a {detected_chain.upper()} address."
+        )
+
+    chain = detected_chain
+
+    # Prevent Duplicate Cases for same wallet + chain
+    if not request.force_new:
+        existing_dup = db.query(models.Case).filter(
+            models.Case.suspect_wallet.ilike(suspect_addr),
+            models.Case.blockchain == chain
+        ).first()
+
+        if existing_dup:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": True,
+                    "duplicate": True,
+                    "existing_case_ref": existing_dup.case_ref,
+                    "message": "A case for this wallet exists. Open it or create a new trace?"
+                }
+            )
+
     case_ref = request.case_ref or f"CT-{int(time.time())}"
 
     existing = db.query(models.Case).filter(models.Case.case_ref == case_ref).first()
@@ -255,7 +303,7 @@ async def initiate_trace(
             title=request.title,
             complaint_details=request.complaint_details,
             amount_lost=request.amount_lost,
-            suspect_wallet=request.suspect_wallet,
+            suspect_wallet=suspect_addr,
             blockchain=chain,
             depth=request.depth or 4,
             status="SUBMITTED"

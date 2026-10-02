@@ -35,6 +35,7 @@ class StatsResponse(BaseModel):
     transactions_mapped: int = 0
     probable_vasps: int = 0
     high_risk_clusters: int = 0
+    usd_inr_rate: float = 86.5
 
 class ErrorResponse(BaseModel):
     error: bool = True
@@ -48,6 +49,7 @@ class TraceRequest(BaseModel):
     suspect_wallet: str
     blockchain: Optional[str] = None  # ethereum, tron, bitcoin
     depth: Optional[int] = 4
+    force_new: Optional[bool] = False
 
 class TraceStatusResponse(BaseModel):
     case_ref: str

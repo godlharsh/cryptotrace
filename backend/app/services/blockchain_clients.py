@@ -7,7 +7,7 @@ from app import config
 logger = logging.getLogger("cryptotrace.clients")
 
 # Market Price Cache (10 min TTL)
-_PRICE_CACHE = {"timestamp": 0, "rates": {"ETH": 3200.0, "TRX": 0.25, "BTC": 95000.0, "USDT": 1.0, "USDC": 1.0}}
+_PRICE_CACHE = {"timestamp": 0, "rates": {"ETH": 3200.0, "TRX": 0.25, "BTC": 95000.0, "USDT": 1.0, "USDC": 1.0, "USD_INR": 86.5}}
 
 # In-memory Blockchain API Cache (Address -> Transfer Results)
 _API_CACHE: Dict[str, dict] = {}
@@ -17,31 +17,36 @@ class CoinGeckoClient:
     def get_prices() -> Dict[str, float]:
         global _PRICE_CACHE
         now = time.time()
-        if now - _PRICE_CACHE["timestamp"] < 600:
+        if now - _PRICE_CACHE["timestamp"] < 600 and "USD_INR" in _PRICE_CACHE["rates"]:
             return _PRICE_CACHE["rates"]
+
+        default_rates = {"ETH": 3200.0, "TRX": 0.25, "BTC": 95000.0, "USDT": 1.0, "USDC": 1.0, "USD_INR": 86.5}
 
         if not config.COINGECKO_API_KEY:
-            return _PRICE_CACHE["rates"]
+            return default_rates
 
-        url = "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,tron,bitcoin,tether,usd-coin&vs_currencies=usd"
+        url = "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,tron,bitcoin,tether,usd-coin&vs_currencies=usd,inr"
         headers = {"x-cg-demo-api-key": config.COINGECKO_API_KEY}
         try:
             r = httpx.get(url, headers=headers, timeout=6.0)
             if r.status_code == 200:
                 data = r.json()
+                inr_rate = float(data.get("tether", {}).get("inr", 86.5))
                 rates = {
                     "ETH": float(data.get("ethereum", {}).get("usd", 3200.0)),
                     "TRX": float(data.get("tron", {}).get("usd", 0.25)),
                     "BTC": float(data.get("bitcoin", {}).get("usd", 95000.0)),
                     "USDT": float(data.get("tether", {}).get("usd", 1.0)),
                     "USDC": float(data.get("usd-coin", {}).get("usd", 1.0)),
+                    "USD_INR": inr_rate if inr_rate > 0 else 86.5
                 }
                 _PRICE_CACHE = {"timestamp": now, "rates": rates}
                 return rates
         except Exception as e:
             logger.warning(f"CoinGecko price fetch failed: {e}. Using cached/fallback rates.")
 
-        return _PRICE_CACHE["rates"]
+        return default_rates
+
 
 
 class EtherscanClient:

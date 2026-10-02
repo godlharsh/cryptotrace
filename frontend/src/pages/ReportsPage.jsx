@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Printer, Download, ShieldCheck, Building2, AlertTriangle, FileText } from 'lucide-react';
 import { AppShell } from '../components/AppShell';
+import { formatINR } from '../utils/formatters';
 
 export function ReportsPage() {
   const [casesList, setCasesList] = useState([]);
@@ -150,7 +151,7 @@ export function ReportsPage() {
 
                 <div>
                   <span style={{ color: '#64748B', fontSize: 11, display: 'block' }}>Reported Victim Loss:</span>
-                  <strong style={{ color: '#DC2626' }}>${caseDetails.amount_lost?.toLocaleString() || '0.00'} USD</strong>
+                  <strong style={{ color: '#DC2626' }}>{formatINR(caseDetails.amount_lost)}</strong>
                 </div>
 
                 <div>

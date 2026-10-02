@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { formatINR } from '../utils/formatters';
 
 const PIPELINE_STAGES = [
   'Wallet Intake',
@@ -33,6 +34,7 @@ export function DashboardPage() {
     transactions_mapped: 0,
     probable_vasps: 0,
     high_risk_clusters: 0,
+    usd_inr_rate: 86.5
   });
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -92,10 +94,10 @@ export function DashboardPage() {
           </div>
         )}
 
-        {/* 4 Stat Cards */}
+        {/* 4 Stat Cards - Neutral grey outline icons on plain grey-tint square */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
           <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'var(--accent-soft-color)', color: 'var(--accent-color)' }}>
+            <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'var(--surface-2-color)', color: 'var(--muted-color)', border: '1px solid var(--border-color)' }}>
               <Wallet size={24} />
             </div>
             <div>
@@ -105,7 +107,7 @@ export function DashboardPage() {
           </div>
 
           <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'var(--accent-soft-color)', color: 'var(--accent-color)' }}>
+            <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'var(--surface-2-color)', color: 'var(--muted-color)', border: '1px solid var(--border-color)' }}>
               <GitCommit size={24} />
             </div>
             <div>
@@ -115,7 +117,7 @@ export function DashboardPage() {
           </div>
 
           <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'var(--status-low-bg)', color: 'var(--status-low-text)' }}>
+            <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'var(--surface-2-color)', color: 'var(--muted-color)', border: '1px solid var(--border-color)' }}>
               <Building2 size={24} />
             </div>
             <div>
@@ -125,7 +127,7 @@ export function DashboardPage() {
           </div>
 
           <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'var(--status-critical-bg)', color: 'var(--status-critical-text)' }}>
+            <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'var(--surface-2-color)', color: 'var(--muted-color)', border: '1px solid var(--border-color)' }}>
               <AlertOctagon size={24} />
             </div>
             <div>
@@ -165,7 +167,7 @@ export function DashboardPage() {
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h2 className="card-title">Recent Investigation Cases</h2>
-            <button className="btn btn-primary" style={{ height: 32, fontSize: 13 }} onClick={() => navigate('/trace')}>
+            <button className="btn btn-primary" style={{ height: 32, fontSize: 13 }} onClick={() => navigate('/fund-flow')}>
               <Play size={14} /> Start Tracing
             </button>
           </div>
@@ -178,7 +180,7 @@ export function DashboardPage() {
                   <th>Title</th>
                   <th>Suspect Wallet</th>
                   <th>Chain</th>
-                  <th>Loss USD</th>
+                  <th>Reported Loss (INR)</th>
                   <th>Status</th>
                   <th>Action</th>
                 </tr>
@@ -197,14 +199,14 @@ export function DashboardPage() {
                       <td>{c.title}</td>
                       <td className="mono-address">{c.suspect_wallet.substring(0, 8)}...{c.suspect_wallet.substring(c.suspect_wallet.length - 6)}</td>
                       <td style={{ textTransform: 'uppercase', fontWeight: 600 }}>{c.blockchain}</td>
-                      <td>${c.amount_lost?.toLocaleString() || '0'}</td>
+                      <td style={{ fontWeight: 600 }}>{formatINR(c.amount_lost, stats.usd_inr_rate)}</td>
                       <td>
                         <span className={`badge ${c.status === 'COMPLETED' ? 'badge-low' : 'badge-high'}`}>
                           {c.status}
                         </span>
                       </td>
                       <td>
-                        <button className="btn btn-secondary" style={{ height: 28, fontSize: 12, padding: '0 8px' }} onClick={() => navigate('/trace')}>
+                        <button className="btn btn-secondary" style={{ height: 28, fontSize: 12, padding: '0 8px' }} onClick={() => navigate('/fund-flow')}>
                           Inspect Graph <ArrowRight size={12} />
                         </button>
                       </td>
