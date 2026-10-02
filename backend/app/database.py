@@ -31,11 +31,18 @@ def init_db():
             logger.warning(f"Postgres connection failed: {e}. Falling back to local SQLite database.")
             db_type = "sqlite (fallback)"
             db_connected = True
-            engine = create_engine("sqlite:///./local.db", connect_args={"check_same_thread": False})
+            engine = create_engine("sqlite:///./local.db", connect_args={"check_same_thread": False, "timeout": 30})
     else:
         db_type = "sqlite"
         db_connected = True
-        engine = create_engine("sqlite:///./local.db", connect_args={"check_same_thread": False})
+        engine = create_engine("sqlite:///./local.db", connect_args={"check_same_thread": False, "timeout": 30})
+
+    if "sqlite" in db_type:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("PRAGMA journal_mode=WAL;"))
+        except Exception:
+            pass
 
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

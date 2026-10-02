@@ -49,3 +49,13 @@ class Alert(Base):
     status = Column(String(50), default="ACTIVE")  # ACTIVE, CONFIRMED, FALSE_POSITIVE
     path_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class GraphSnapshot(Base):
+    __tablename__ = "graph_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_ref = Column(String(100), unique=True, index=True, nullable=False)
+    graph_json = Column(Text, nullable=False)
+    nodes_count = Column(Integer, default=0)
+    edges_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)

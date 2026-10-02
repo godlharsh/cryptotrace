@@ -39,3 +39,27 @@ class StatsResponse(BaseModel):
 class ErrorResponse(BaseModel):
     error: bool = True
     message: str
+
+class TraceRequest(BaseModel):
+    case_ref: Optional[str] = None
+    title: str = "Suspect Wallet Investigation"
+    complaint_details: Optional[str] = ""
+    amount_lost: Optional[float] = 0.0
+    suspect_wallet: str
+    blockchain: Optional[str] = None  # ethereum, tron, bitcoin
+    depth: Optional[int] = 4
+
+class TraceStatusResponse(BaseModel):
+    case_ref: str
+    status: str
+    progress_percent: int
+    stage: str
+    current_hop: int
+    wallets_found: int
+    error: Optional[str] = None
+
+class GraphResponse(BaseModel):
+    case_ref: str
+    nodes: list
+    edges: list
+
