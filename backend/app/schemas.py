@@ -1,4 +1,4 @@
-from typing import Optional, Dict
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, ConfigDict
 
 class Token(BaseModel):
@@ -62,4 +62,28 @@ class GraphResponse(BaseModel):
     case_ref: str
     nodes: list
     edges: list
+    vasp_summary: Optional[dict] = None
+    ai_summary: Optional[str] = None
 
+class AlertItem(BaseModel):
+    id: Optional[int] = None
+    case_id: Optional[int] = None
+    title: str
+    severity: str
+    risk_score: float
+    reason: str
+    status: str = "ACTIVE"
+    path_json: Optional[str] = None
+
+class AlertsResponse(BaseModel):
+    case_ref: str
+    alerts_count: int
+    alerts: List[AlertItem]
+
+class VASPSummaryResponse(BaseModel):
+    case_ref: str
+    probable_vasp: str
+    confidence_score: float
+    target_node: str
+    attribution_method: str
+    ai_summary: str
