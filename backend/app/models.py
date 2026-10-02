@@ -20,6 +20,9 @@ class Case(Base):
     title = Column(String(255), nullable=False)
     complaint_details = Column(Text, nullable=True)
     amount_lost = Column(Float, nullable=True)
+    amount_lost_usd = Column(Float, nullable=True)
+    usd_inr_rate = Column(Float, default=86.5, nullable=True)
+    rate_at = Column(DateTime, default=datetime.utcnow, nullable=True)
     suspect_wallet = Column(String(255), nullable=False)
     blockchain = Column(String(50), nullable=False)  # ethereum, tron, bitcoin
     depth = Column(Integer, default=4)

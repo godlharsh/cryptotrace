@@ -193,20 +193,20 @@ export function DashboardPage() {
                     </td>
                   </tr>
                 ) : (
-                  cases.map((c) => (
+                  cases.slice(0, 10).map((c) => (
                     <tr key={c.case_ref}>
                       <td style={{ fontWeight: 600 }} className="mono-address">{c.case_ref}</td>
                       <td>{c.title}</td>
                       <td className="mono-address">{c.suspect_wallet.substring(0, 8)}...{c.suspect_wallet.substring(c.suspect_wallet.length - 6)}</td>
                       <td style={{ textTransform: 'uppercase', fontWeight: 600 }}>{c.blockchain}</td>
-                      <td style={{ fontWeight: 600 }}>{formatINR(c.amount_lost, stats.usd_inr_rate)}</td>
+                      <td style={{ fontWeight: 600 }}>{formatINR(c.amount_lost_usd ?? c.amount_lost, c.usd_inr_rate ?? stats.usd_inr_rate ?? 86.5)}</td>
                       <td>
                         <span className={`badge ${c.status === 'COMPLETED' ? 'badge-low' : 'badge-high'}`}>
                           {c.status}
                         </span>
                       </td>
                       <td>
-                        <button className="btn btn-secondary" style={{ height: 28, fontSize: 12, padding: '0 8px' }} onClick={() => navigate('/fund-flow')}>
+                        <button className="btn btn-secondary" style={{ height: 28, fontSize: 12, padding: '0 8px' }} onClick={() => navigate(`/fund-flow/${c.case_ref}`)}>
                           Inspect Graph <ArrowRight size={12} />
                         </button>
                       </td>
@@ -216,6 +216,11 @@ export function DashboardPage() {
               </tbody>
             </table>
           </div>
+          {cases.length > 0 && (
+            <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted-color)', textAlign: 'right' }}>
+              Showing {Math.min(cases.length, 10)} of {cases.length} investigation cases
+            </div>
+          )}
         </div>
       </div>
     </AppShell>

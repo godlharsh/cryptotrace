@@ -1,6 +1,7 @@
 import time
 import json
 import asyncio
+from datetime import datetime
 import httpx
 from fastapi import FastAPI, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,9 +46,45 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
         headers=exc.headers,
     )
 
+def run_auto_migrations(target_engine):
+    try:
+        with target_engine.connect() as conn:
+            if target_engine.dialect.name == "sqlite":
+                cols = [row[1] for row in conn.execute(text("PRAGMA table_info(cases);")).fetchall()]
+            else:
+                res = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='cases';")).fetchall()
+                cols = [r[0] for r in res]
+
+            if "amount_lost_usd" not in cols:
+                conn.execute(text("ALTER TABLE cases ADD COLUMN amount_lost_usd FLOAT;"))
+            if "usd_inr_rate" not in cols:
+                conn.execute(text("ALTER TABLE cases ADD COLUMN usd_inr_rate FLOAT DEFAULT 86.5;"))
+            if "rate_at" not in cols:
+                conn.execute(text("ALTER TABLE cases ADD COLUMN rate_at TIMESTAMP;"))
+            conn.commit()
+    except Exception as e:
+        print(f"[AutoMigration] Notice: {e}")
+
+@app.get("/health")
+@app.get("/api/health")
+async def health_check():
+    from app.database import db_type, db_connected, db_error_message
+    return {
+        "status": "ok" if db_connected else "error",
+        "database": db_type,
+        "connected": db_connected,
+        "error": db_error_message if not db_connected else None
+    }
+
 @app.on_event("startup")
 def on_startup():
+    from app.database import engine, db_connected
+    if not db_connected or engine is None:
+        print("[Startup] Database not connected. Skipping schema creation & migrations.")
+        return
+
     try:
+        run_auto_migrations(engine)
         Base.metadata.create_all(bind=engine)
     except Exception as e:
         print(f"Metadata create_all initial attempt: {e}")
@@ -295,6 +332,9 @@ async def initiate_trace(
             )
 
     case_ref = request.case_ref or f"CT-{int(time.time())}"
+    from app.services.currency_service import CurrencyService
+    current_rate = CurrencyService.get_usd_inr_rate()
+    now_dt = datetime.utcnow()
 
     existing = db.query(models.Case).filter(models.Case.case_ref == case_ref).first()
     if not existing:
@@ -303,6 +343,9 @@ async def initiate_trace(
             title=request.title,
             complaint_details=request.complaint_details,
             amount_lost=request.amount_lost,
+            amount_lost_usd=request.amount_lost,
+            usd_inr_rate=current_rate,
+            rate_at=now_dt,
             suspect_wallet=suspect_addr,
             blockchain=chain,
             depth=request.depth or 4,
@@ -314,6 +357,11 @@ async def initiate_trace(
     else:
         case_obj = existing
         case_obj.status = "SUBMITTED"
+        if not case_obj.usd_inr_rate:
+            case_obj.usd_inr_rate = current_rate
+            case_obj.rate_at = now_dt
+        if not case_obj.amount_lost_usd:
+            case_obj.amount_lost_usd = request.amount_lost or case_obj.amount_lost
         db.commit()
 
     update_trace_progress(case_ref, "Submitted", 10, hop=0, wallets=1, status="SUBMITTED")

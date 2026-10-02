@@ -26,4 +26,5 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@cryptotrace.gov.in")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "CT@2026#Quasar").strip('"').strip("'")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
 DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
+FALLBACK_USD_INR = float(os.getenv("FALLBACK_USD_INR", "86.5"))
 PORT = int(os.getenv("PORT", "8000"))

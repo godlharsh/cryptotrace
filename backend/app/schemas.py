@@ -89,3 +89,20 @@ class VASPSummaryResponse(BaseModel):
     target_node: str
     attribution_method: str
     ai_summary: str
+
+class CaseResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    case_ref: str
+    title: str
+    complaint_details: Optional[str] = None
+    amount_lost: Optional[float] = 0.0
+    amount_lost_usd: Optional[float] = 0.0
+    usd_inr_rate: Optional[float] = 86.5
+    rate_at: Optional[Any] = None
+    suspect_wallet: str
+    blockchain: str
+    depth: int
+    status: str
+    created_at: Any
+

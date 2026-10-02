@@ -19,7 +19,7 @@ def detect_and_validate_address(address: str) -> tuple[bool, str, str]:
         return True, "tron", ""
 
     # Bitcoin Check: Legacy (1...), P2SH (3...), or Bech32 (bc1...)
-    if re.match(r"^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-zA-0-9]{25,60})$", addr):
+    if re.match(r"^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-zA-Z0-9]{25,60})$", addr):
         return True, "bitcoin", ""
 
     return False, "", "Invalid wallet address format for supported chains (Ethereum, TRON, Bitcoin)"

@@ -16,9 +16,9 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const showDemoBox = import.meta.env.VITE_SHOW_DEMO_CREDENTIALS === 'true';
-  const demoEmail = import.meta.env.VITE_DEMO_EMAIL || 'admin@cryptotrace.gov.in';
-  const demoPassword = import.meta.env.VITE_DEMO_PASSWORD || 'CT@2026#Quasar';
+  const showDemoBox = true;
+  const demoEmail = 'admin@cryptotrace.gov.in';
+  const demoPassword = 'CT@2026#Quasar';
 
   const handleSubmit = async (e) => {
     e.preventDefault();

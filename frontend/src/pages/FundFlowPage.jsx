@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Search, Play, RefreshCw, Shield, AlertTriangle, Building2, ExternalLink, Copy, Check, Filter } from 'lucide-react';
 import { AppShell } from '../components/AppShell';
 import GraphCanvas from '../components/GraphCanvas';
 import { formatINR } from '../utils/formatters';
 
 export function FundFlowPage() {
+  const { caseId } = useParams();
+  const navigate = useNavigate();
+
   const [suspectWallet, setSuspectWallet] = useState('');
   const [blockchain, setBlockchain] = useState('ethereum');
   const [depth, setDepth] = useState(3);
@@ -13,6 +17,7 @@ export function FundFlowPage() {
 
   const [casesList, setCasesList] = useState([]);
   const [selectedCaseRef, setSelectedCaseRef] = useState('');
+  const [caseNotFound, setCaseNotFound] = useState(false);
 
   const [graphData, setGraphData] = useState({ nodes: [], edges: [], vasp_summary: null, ai_summary: null });
   const [selectedNode, setSelectedNode] = useState(null);
@@ -50,6 +55,7 @@ export function FundFlowPage() {
     return { isMismatch: false, detected, msg: '' };
   }, [suspectWallet, blockchain]);
 
+  // 1. Fetch initial cases list on mount
   useEffect(() => {
     fetchCases();
   }, []);
@@ -59,25 +65,50 @@ export function FundFlowPage() {
       const r = await fetch('/api/cases');
       if (r.ok) {
         const data = await r.json();
-        setCasesList(data);
-        if (data.length > 0 && !selectedCaseRef) {
-          setSelectedCaseRef(data[0].case_ref);
-          loadCaseGraph(data[0].case_ref);
-        }
+        setCasesList(data || []);
       }
     } catch (e) {
       console.error('Failed to fetch cases:', e);
     }
   };
 
+  // 2. React to URL param `caseId` changes or `casesList` update
+  useEffect(() => {
+    if (!casesList.length) return;
+
+    if (caseId) {
+      const matched = casesList.find(
+        (c) => c.case_ref.toLowerCase() === caseId.toLowerCase() || String(c.id) === caseId
+      );
+
+      if (matched) {
+        setCaseNotFound(false);
+        setSelectedCaseRef(matched.case_ref);
+        loadCaseGraph(matched.case_ref);
+      } else {
+        setCaseNotFound(true);
+        setSelectedCaseRef(caseId);
+        setGraphData({ nodes: [], edges: [], vasp_summary: null, ai_summary: null });
+        setSelectedNode(null);
+      }
+    } else if (casesList.length > 0) {
+      // Default to first case if no caseId parameter in URL
+      const defaultRef = casesList[0].case_ref;
+      navigate(`/fund-flow/${defaultRef}`, { replace: true });
+    }
+  }, [caseId, casesList]);
+
   const loadCaseGraph = async (caseRef) => {
+    setSelectedNode(null); // Clear previous selected node
     try {
       const r = await fetch(`/api/cases/${caseRef}/graph`);
       if (r.ok) {
         const data = await r.json();
         setGraphData(data);
+        // Ensure Node Inspector displays origin wallet of the selected case
         if (data.nodes && data.nodes.length > 0) {
-          setSelectedNode(data.nodes[0]);
+          const originNode = data.nodes.find((n) => n.hop === 0 || n.role === 'origin') || data.nodes[0];
+          setSelectedNode(originNode);
         }
       }
     } catch (e) {
@@ -87,8 +118,9 @@ export function FundFlowPage() {
 
   const handleCaseChange = (e) => {
     const ref = e.target.value;
-    setSelectedCaseRef(ref);
-    if (ref) loadCaseGraph(ref);
+    if (ref) {
+      navigate(`/fund-flow/${ref}`);
+    }
   };
 
   const handleStartTrace = async (e, forceNew = false) => {
@@ -124,7 +156,12 @@ export function FundFlowPage() {
         })
       });
 
-      const resData = await r.json();
+      let resData = {};
+      try {
+        resData = await r.json();
+      } catch (e) {
+        resData = { message: `Server error (${r.status}): ${r.statusText || 'Internal Server Error'}` };
+      }
 
       // Check for 409 Duplicate Case response
       if (r.status === 409 && resData.duplicate) {
@@ -140,7 +177,6 @@ export function FundFlowPage() {
         throw new Error(resData.message || 'Failed to launch tracing task.');
       }
 
-      setSelectedCaseRef(newCaseRef);
       pollTraceStatus(newCaseRef);
     } catch (err) {
       setIsTracing(false);
@@ -164,7 +200,7 @@ export function FundFlowPage() {
             clearInterval(interval);
             setIsTracing(false);
             await fetchCases();
-            await loadCaseGraph(caseRef);
+            navigate(`/fund-flow/${caseRef}`);
           } else if (statusData.status === 'FAILED') {
             clearInterval(interval);
             setIsTracing(false);
@@ -200,7 +236,7 @@ export function FundFlowPage() {
               <span style={{ fontSize: 13, color: 'var(--muted-color)' }}>Active Case:</span>
               <select
                 className="input-field"
-                style={{ width: 220 }}
+                style={{ width: 240 }}
                 value={selectedCaseRef}
                 onChange={handleCaseChange}
               >
@@ -258,7 +294,7 @@ export function FundFlowPage() {
 
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-color)', display: 'block', marginBottom: 6 }}>
-                Trace Depth (Hops)
+                Trace depth for new trace
               </label>
               <select className="input-field" value={depth} onChange={(e) => setDepth(e.target.value)}>
                 <option value={1}>1 Hop (Direct Counterparties)</option>
@@ -311,8 +347,7 @@ export function FundFlowPage() {
                   onClick={() => {
                     const ref = duplicateModal.existing_case_ref;
                     setDuplicateModal(null);
-                    setSelectedCaseRef(ref);
-                    loadCaseGraph(ref);
+                    navigate(`/fund-flow/${ref}`);
                   }}
                 >
                   Open Existing Case
@@ -351,95 +386,110 @@ export function FundFlowPage() {
           </div>
         )}
 
-        {/* Graph & Inspector Split Layout */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20 }}>
-          <div>
-            <GraphCanvas
-              nodes={graphData.nodes || []}
-              edges={graphData.edges || []}
-              onSelectNode={setSelectedNode}
-              selectedNode={selectedNode}
-            />
+        {/* Case Not Found View */}
+        {caseNotFound ? (
+          <div className="card" style={{ padding: 40, textAlign: 'center' }}>
+            <AlertTriangle size={36} color="#DC2626" style={{ margin: '0 auto 12px' }} />
+            <h3 className="card-title" style={{ fontSize: 18 }}>Case Not Found</h3>
+            <p style={{ color: 'var(--muted-color)', marginTop: 8, marginBottom: 20, fontSize: 14 }}>
+              The requested investigation case "{caseId}" could not be found or does not exist.
+            </p>
+            <Link to="/" className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              Return to Dashboard
+            </Link>
           </div>
+        ) : (
+          /* Graph & Inspector Split Layout */
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
+            <div>
+              <GraphCanvas
+                nodes={graphData.nodes || []}
+                edges={graphData.edges || []}
+                onSelectNode={setSelectedNode}
+                selectedNode={selectedNode}
+                usdInrRate={casesList.find((c) => c.case_ref === selectedCaseRef)?.usd_inr_rate || 86.5}
+              />
+            </div>
 
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>Node Inspector</span>
-              {selectedNode && (
-                <span className={`badge ${selectedNode.risk_score >= 90 ? 'badge-critical' : selectedNode.risk_score >= 70 ? 'badge-high' : 'badge-low'}`}>
-                  Risk {selectedNode.risk_score || 0}
-                </span>
-              )}
-            </h3>
-
-            {selectedNode ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-color)', textTransform: 'uppercase' }}>Wallet Address</span>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'var(--surface-2-color)', padding: '8px 10px', borderRadius: 'var(--radius-input)', marginTop: 4 }}>
-                    <span className="mono-address" style={{ wordBreak: 'break-all', fontSize: 12 }}>{selectedNode.address}</span>
-                    <button className="btn btn-secondary" style={{ padding: 4, height: 'auto' }} onClick={() => copyAddress(selectedNode.address)}>
-                      {copiedAddr ? <Check size={14} color="#16A34A" /> : <Copy size={14} />}
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div style={{ backgroundColor: 'var(--surface-2-color)', padding: 10, borderRadius: 'var(--radius-input)' }}>
-                    <span style={{ fontSize: 11, color: 'var(--muted-color)' }}>Hop Distance</span>
-                    <p style={{ fontWeight: 600, fontSize: 15, marginTop: 2 }}>Hop {selectedNode.hop ?? 0}</p>
-                  </div>
-
-                  <div style={{ backgroundColor: 'var(--surface-2-color)', padding: 10, borderRadius: 'var(--radius-input)' }}>
-                    <span style={{ fontSize: 11, color: 'var(--muted-color)' }}>Role</span>
-                    <p style={{ fontWeight: 600, fontSize: 13, marginTop: 2, textTransform: 'capitalize' }}>
-                      {selectedNode.role || 'Intermediary'}
-                    </p>
-                  </div>
-                </div>
-
-                {selectedNode.vasp_name && (
-                  <div style={{ backgroundColor: 'var(--status-low-bg)', border: '1px solid var(--status-low-border)', padding: 12, borderRadius: 'var(--radius-input)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--status-low-text)', fontWeight: 600 }}>
-                      <Building2 size={16} />
-                      <span>VASP: {selectedNode.vasp_name}</span>
-                    </div>
-                    <p style={{ fontSize: 12, color: 'var(--text-color)', marginTop: 4 }}>
-                      Attribution Confidence: <strong>{selectedNode.vasp_confidence || 85}%</strong>
-                    </p>
-                  </div>
-                )}
-
-                <div>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-color)', display: 'block', marginBottom: 8 }}>
-                    Connected Transfers ({graphData.edges.filter(e => e.source.toLowerCase() === selectedNode.address.toLowerCase() || e.target.toLowerCase() === selectedNode.address.toLowerCase()).length})
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>Node Inspector</span>
+                {selectedNode && (
+                  <span className={`badge ${selectedNode.risk_score >= 90 ? 'badge-critical' : selectedNode.risk_score >= 70 ? 'badge-high' : 'badge-low'}`}>
+                    Risk {selectedNode.risk_score || 0}
                   </span>
-                  
-                  <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {graphData.edges
-                      .filter(e => e.source.toLowerCase() === selectedNode.address.toLowerCase() || e.target.toLowerCase() === selectedNode.address.toLowerCase())
-                      .map((edge, i) => (
-                        <div key={i} style={{ fontSize: 12, padding: 8, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-input)', backgroundColor: 'var(--surface-2-color)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
-                            <span>{edge.amount} {edge.token}</span>
-                            <span style={{ color: 'var(--accent-color)' }}>${edge.fiat_usd?.toLocaleString()}</span>
+                )}
+              </h3>
+
+              {selectedNode ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-color)', textTransform: 'uppercase' }}>Wallet Address</span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'var(--surface-2-color)', padding: '8px 10px', borderRadius: 'var(--radius-input)', marginTop: 4 }}>
+                      <span className="mono-address" style={{ wordBreak: 'break-all', fontSize: 12 }}>{selectedNode.address}</span>
+                      <button className="btn btn-secondary" style={{ padding: 4, height: 'auto' }} onClick={() => copyAddress(selectedNode.address)}>
+                        {copiedAddr ? <Check size={14} color="#16A34A" /> : <Copy size={14} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div style={{ backgroundColor: 'var(--surface-2-color)', padding: 10, borderRadius: 'var(--radius-input)' }}>
+                      <span style={{ fontSize: 11, color: 'var(--muted-color)' }}>Hop Distance</span>
+                      <p style={{ fontWeight: 600, fontSize: 15, marginTop: 2 }}>Hop {selectedNode.hop ?? 0}</p>
+                    </div>
+
+                    <div style={{ backgroundColor: 'var(--surface-2-color)', padding: 10, borderRadius: 'var(--radius-input)' }}>
+                      <span style={{ fontSize: 11, color: 'var(--muted-color)' }}>Role</span>
+                      <p style={{ fontWeight: 600, fontSize: 13, marginTop: 2, textTransform: 'capitalize' }}>
+                        {selectedNode.role || 'Intermediary'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {selectedNode.vasp_name && (
+                    <div style={{ backgroundColor: 'var(--status-low-bg)', border: '1px solid var(--status-low-border)', padding: 12, borderRadius: 'var(--radius-input)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--status-low-text)', fontWeight: 600 }}>
+                        <Building2 size={16} />
+                        <span>VASP: {selectedNode.vasp_name}</span>
+                      </div>
+                      <p style={{ fontSize: 12, color: 'var(--text-color)', marginTop: 4 }}>
+                        Attribution Confidence: <strong>{selectedNode.vasp_confidence || 85}%</strong>
+                      </p>
+                    </div>
+                  )}
+
+                  <div>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-color)', display: 'block', marginBottom: 8 }}>
+                      Connected Transfers ({graphData.edges.filter(e => e.source.toLowerCase() === selectedNode.address.toLowerCase() || e.target.toLowerCase() === selectedNode.address.toLowerCase()).length})
+                    </span>
+                    
+                    <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {graphData.edges
+                        .filter(e => e.source.toLowerCase() === selectedNode.address.toLowerCase() || e.target.toLowerCase() === selectedNode.address.toLowerCase())
+                        .map((edge, i) => (
+                          <div key={i} style={{ fontSize: 12, padding: 8, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-input)', backgroundColor: 'var(--surface-2-color)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                              <span>{edge.amount} {edge.token}</span>
+                              <span style={{ color: 'var(--accent-color)' }}>${edge.fiat_usd?.toLocaleString()}</span>
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--muted-color)', marginTop: 2 }} className="mono-address">
+                              {edge.source.substring(0, 6)}... &rarr; {edge.target.substring(0, 6)}...
+                            </div>
                           </div>
-                          <div style={{ fontSize: 11, color: 'var(--muted-color)', marginTop: 2 }} className="mono-address">
-                            {edge.source.substring(0, 6)}... &rarr; {edge.target.substring(0, 6)}...
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '40px 10px', color: 'var(--muted-color)' }}>
-                <Search size={32} style={{ opacity: 0.4, marginBottom: 8 }} />
-                <p style={{ fontSize: 13 }}>Click any node on the graph canvas to inspect detailed wallet telemetry.</p>
-              </div>
-            )}
+              ) : (
+                <div style={{ textAlign: 'center', padding: '40px 10px', color: 'var(--muted-color)' }}>
+                  <Search size={32} style={{ opacity: 0.4, marginBottom: 8 }} />
+                  <p style={{ fontSize: 13 }}>Click any node on the graph canvas to inspect detailed wallet telemetry.</p>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </AppShell>
   );

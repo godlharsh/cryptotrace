@@ -269,3 +269,23 @@ body {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* Responsive adjustments for mobile & tablets */
+@media (max-width: 768px) {
+  .input-field {
+    font-size: 16px; /* Prevents mobile browser auto-zoom */
+  }
+  .table-container {
+    -webkit-overflow-scrolling: touch;
+  }
+  .card {
+    padding: 16px;
+  }
+  main {
+    padding: 16px !important;
+  }
+  header {
+    padding: 0 16px !important;
+  }
+}
+

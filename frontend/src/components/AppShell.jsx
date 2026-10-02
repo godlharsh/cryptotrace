@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { 
   Shield, 
@@ -11,7 +11,8 @@ import {
   Moon, 
   LogOut, 
   Menu, 
-  X 
+  X,
+  AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -30,6 +31,18 @@ export function AppShell({ title, children }) {
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [dbError, setDbError] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/health')
+      .then(r => r.json())
+      .then(d => {
+        if (d.connected === false) {
+          setDbError(d.error || 'Failed to connect to Supabase PostgreSQL database.');
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const getPageTitle = () => {
     if (title) return title;
@@ -42,6 +55,18 @@ export function AppShell({ title, children }) {
   return (
     <ErrorBoundary>
       <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-color)' }}>
+        {/* Mobile Drawer Overlay Backdrop */}
+        {mobileOpen && (
+          <div
+            onClick={() => setMobileOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.4)',
+              zIndex: 35
+            }}
+          />
+        )}
         {/* Sidebar */}
         <aside style={{
           width: '260px',
@@ -188,6 +213,23 @@ export function AppShell({ title, children }) {
               </button>
             </div>
           </header>
+
+          {dbError && (
+            <div style={{
+              backgroundColor: 'var(--status-critical-bg)',
+              borderBottom: '1px solid var(--status-critical-border)',
+              padding: '12px 28px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              color: 'var(--status-critical-text)',
+              fontSize: '13px',
+              fontWeight: 600
+            }}>
+              <AlertCircle size={18} />
+              <span>Database not connected: {dbError}</span>
+            </div>
+          )}
 
           {/* Page Body */}
           <main style={{ flex: 1, padding: '28px' }}>
