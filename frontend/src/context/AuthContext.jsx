@@ -25,11 +25,11 @@ export function AuthProvider({ children }) {
         const res = await fetch('/api/auth/me', {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
           const userData = await res.json();
           setUser(userData);
-        } else {
-          // Token invalid or expired
+        } else if (res.status === 401) {
           logout();
         }
       } catch (err) {
@@ -42,14 +42,25 @@ export function AuthProvider({ children }) {
   }, [token]);
 
   const login = async (email, password) => {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
+    let res;
+    try {
+      res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+    } catch (netErr) {
+      throw new Error('Backend server is unreachable. Please start Uvicorn server on port 8000.');
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      throw new Error(`Backend server is not responding with JSON (${res.status}). Please start Uvicorn backend on port 8000.`);
+    }
+
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.message || 'Login failed');
+      throw new Error(data.message || 'Login failed. Check email and password.');
     }
     try {
       localStorage.setItem('ct_token', data.access_token);
